@@ -1,11 +1,10 @@
 #=
 qc:
 - Julia version: 1.5.3
-- Author: cgon
+- Author: cgon (contralto)
 - Date: 2020-12-23
 =#
 
-# /Applications/Julia-1.5.app/Contents/Resources/julia/bin/julia
 
 # TODO: show_graph, plot_state, pixel_state, complex_to_rgb, hsv_to_rgb
 
@@ -57,10 +56,12 @@ function transform_with_matrix!(state, t, gate, cond::Function = f(x::Int)::Bool
     factor = 2 ^ (t + 1)
     shift = Int(2 ^ t)
 
-    for prefix in 1:(n / factor)
-        for suffix in 1:(2^t)
-            m0 = Int(factor * (prefix  - 1) + suffix)
-            if (cond(m0 - 1))
+    for prefix in 0:(n / factor - 1)
+        for suffix in 0:(2^t - 1)
+            m0 = Int(factor * (prefix) + suffix)
+            if (cond(m0))
+                # + 1 for julia indexing
+                m0 += 1
                 m1 = m0 + shift
                 G[m0, m0] = gate[1][1]
                 G[m0, m1] = gate[1][2]
@@ -73,7 +74,7 @@ function transform_with_matrix!(state, t, gate, cond::Function = f(x::Int)::Bool
     show(stdout, "text/plain", G)
     println()
     println()
-    state[:] = G * state
+    state .= G * state
 end
 
 
