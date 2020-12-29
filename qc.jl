@@ -13,7 +13,10 @@ using LinearAlgebra
 h = [[1/sqrt(2), 1/sqrt(2)],
     [1/sqrt(2), -1/sqrt(2)]]
 
-function pair_exchange!(state, gate, m0, m1)
+function pair_exchange!(state::Vector{Complex{Float64}},
+                        gate::Array{Complex{Float64}, (2, 2)},
+                        m0::Int,
+                        m1::Int)
     x = state[m0]
     y = state[m1]
     state[m0] = gate[1][1] * x + gate[1][2] * y
@@ -21,7 +24,10 @@ function pair_exchange!(state, gate, m0, m1)
 end
 
 
-function transform!(state, target, gate, cond::Function = f(x::Int)::Bool = true)
+function transform!(state::Vector{Complex{Float64}},
+                    target::Int,
+                    gate::Array{Complex{Float64}, (2, 2)},
+                    cond::Function = f(x::Int)::Bool = true)
     # sections begin when we reach a new set of "first qbits" (i.e. first in a pair)
     # ex. with distance 2 and state [1, 0, 0, 0, 0, 0, 0, 0], the sections would be
     # [1*, 0*, 0, 0], [0*, 0*, 0, 0] (* signifies the first qbit of each pair)
@@ -49,7 +55,10 @@ end
 
 
 
-function transform_with_matrix!(state, t, gate, cond::Function = f(x::Int)::Bool = true)
+function transform_with_matrix!(state::Vector{Complex{Float64}},
+                                target::Int,
+                                gate::Array{Complex{Float64}, (2, 2)},
+                                cond::Function = f(x::Int)::Bool = true)
     n = length(state)
     G = Matrix{Float64}(I, n, n)
 
