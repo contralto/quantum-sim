@@ -45,12 +45,30 @@ function plot_state(state)
          Guide.title("Outcome Probabilities"), tufte_bar)
 end
 
+function phase(theta)
+    return [[1 0], [0 (cos(theta) + im * sin(theta))]]
+end
+
 
 function pair_exchange!(state::State, gate::Gate, m0::Int, m1::Int)
     x = state[m0]
     y = state[m1]
     state[m0] = gate[1][1] * x + gate[1][2] * y
     state[m1] = gate[2][1] * x + gate[2][2] * y
+end
+
+function param_encoding(state, targets, v)
+    theta = v * 2 * pi / (2 ^ length(targets))
+
+    for j in targets
+        transform!(state, j, h)
+    end
+
+    for i in targets
+        transform!(state, i, phase(2 ^ (1im * theta)))
+    end
+
+    # iqft
 end
 
 
@@ -130,6 +148,7 @@ function test_play()
         transform_with_matrix!(state, t, h)
     end
     @show state
+    param_encoding(state, 1, 1)
     plot_state(state)
 end
 
