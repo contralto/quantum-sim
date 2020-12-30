@@ -8,15 +8,21 @@ qc:
 
 # TODO: show_graph, plot_state, pixel_state, complex_to_rgb, hsv_to_rgb
 
-using LinearAlgebra
+using LinearAlgebra, Gadfly
 
-h = [[1/sqrt(2), 1/sqrt(2)],
-    [1/sqrt(2), -1/sqrt(2)]]
+const Amplitude = ComplexF64
+const State = Vector{Amplitude}
+const Gate = Array{Array{Amplitude, 2}, 1}
 
-function pair_exchange!(state::Vector{Complex{Float64}},
-                        gate::Array{Complex{Float64}, (2, 2)},
-                        m0::Int,
-                        m1::Int)
+h = [[ComplexF64(1/sqrt(2)) 1/sqrt(2)],
+     [1/sqrt(2)            -1/sqrt(2)]]
+
+# function plot_state(state::State)
+#     println("print")
+# end
+
+
+function pair_exchange!(state::State, gate::Gate, m0::Int, m1::Int)
     x = state[m0]
     y = state[m1]
     state[m0] = gate[1][1] * x + gate[1][2] * y
@@ -24,9 +30,7 @@ function pair_exchange!(state::Vector{Complex{Float64}},
 end
 
 
-function transform!(state::Vector{Complex{Float64}},
-                    target::Int,
-                    gate::Array{Complex{Float64}, (2, 2)},
+function transform!(state::State, target::Int, gate::Gate,
                     cond::Function = f(x::Int)::Bool = true)
     # sections begin when we reach a new set of "first qbits" (i.e. first in a pair)
     # ex. with distance 2 and state [1, 0, 0, 0, 0, 0, 0, 0], the sections would be
@@ -55,18 +59,16 @@ end
 
 
 
-function transform_with_matrix!(state::Vector{Complex{Float64}},
-                                target::Int,
-                                gate::Array{Complex{Float64}, (2, 2)},
+function transform_with_matrix!(state::State, target::Int, gate::Gate,
                                 cond::Function = f(x::Int)::Bool = true)
     n = length(state)
-    G = Matrix{Float64}(I, n, n)
+    G = Matrix{ComplexF64}(I, n, n)
 
-    factor = 2 ^ (t + 1)
-    shift = Int(2 ^ t)
+    factor = 2 ^ (target + 1)
+    shift = Int(2 ^ target)
 
     for prefix in 0:(n / factor - 1)
-        for suffix in 0:(2^t - 1)
+        for suffix in 0:(2^target - 1)
             m0 = Int(factor * (prefix) + suffix)
             if (cond(m0))
                 # + 1 for julia indexing
@@ -80,17 +82,17 @@ function transform_with_matrix!(state::Vector{Complex{Float64}},
         end
     end
 #     @show G * state
-    show(stdout, "text/plain", G)
-    println()
-    println()
+#     show(stdout, "text/plain", G)
+#     println()
+#     println()
     state .= G * state
 end
 
 
 # initializes the state as an array of size 2^n
 # index 1 has proportion 1, the rest have nothing (proportion 0)
-function init_state(n::Int)::Array{Float64, 1}
-    state::Array{Float64, 1} = [0 for _ in 1:2 ^ n]
+function init_state(n::Int)::Array{Amplitude, 1}
+    state::State = [0 for _ in 1:2 ^ n]
     state[1] = 1
     return state
 end
@@ -103,7 +105,8 @@ function test_play()
         transform_with_matrix!(state, t, h)
     end
 #     println(state)
-@show state
+    @show state
+#     plot_state(state)
 end
 
 test_play()
