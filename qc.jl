@@ -17,44 +17,8 @@ const Gate = Array{Array{Amplitude, 2}, 1}
 h = [[ComplexF64(1/sqrt(2)) 1/sqrt(2)],
      [1/sqrt(2)            -1/sqrt(2)]]
 
-function plot_state(state)
-    l = length(state)
-    outcomes = collect(0:l)
-    probabilities = round.(abs.(state).^2, digits = 3)
-
-    tufte_bar = Theme(
-        default_color = colorant"green",
-        background_color = colorant"white",
-        bar_spacing = 2pt,
-        grid_line_width = 0.25pt,
-        minor_label_font = "Gill Sans",
-        major_label_font = "Gill Sans",
-        alphas = [0.7],
-    )
-
-    set_default_plot_size(max(10, l) * cm, 10 * cm)
-
-    plot(x = [string(i) * " = " * string(i, base=2, pad=Int(log2(l))) for i in 0:(l - 1)],
-         y = probabilities, label=string.(probabilities),
-         Guide.xticks(ticks = outcomes, orientation = :vertical),
-         Guide.yticks(ticks=[i * 0.1 for i = 0:10]),
-         Coord.cartesian(ymin = 0.0, ymax = 1.1),
-         Geom.bar, Geom.label(position=:above),
-         Guide.xlabel("Outcomes"),
-         Guide.ylabel("Probability"),
-         Guide.title("Outcome Probabilities"), tufte_bar)
-end
-
 function phase(theta)
     return [[1 0], [0 (cos(theta) + im * sin(theta))]]
-end
-
-
-function pair_exchange!(state::State, gate::Gate, m0::Int, m1::Int)
-    x = state[m0]
-    y = state[m1]
-    state[m0] = gate[1][1] * x + gate[1][2] * y
-    state[m1] = gate[2][1] * x + gate[2][2] * y
 end
 
 function param_encoding(state, targets, v)
@@ -71,6 +35,12 @@ function param_encoding(state, targets, v)
     # iqft
 end
 
+function pair_exchange!(state::State, gate::Gate, m0::Int, m1::Int)
+    x = state[m0]
+    y = state[m1]
+    state[m0] = gate[1][1] * x + gate[1][2] * y
+    state[m1] = gate[2][1] * x + gate[2][2] * y
+end
 
 function transform!(state::State, target::Int, gate::Gate,
                     cond::Function = f(x::Int)::Bool = true)
@@ -128,6 +98,34 @@ function transform_with_matrix!(state::State, target::Int, gate::Gate,
 #     println()
 #     println()
     state .= G * state
+end
+
+function plot_state(state)
+    l = length(state)
+    outcomes = collect(0:l)
+    probabilities = round.(abs.(state).^2, digits = 3)
+
+    tufte_bar = Theme(
+        default_color = colorant"green",
+        background_color = colorant"white",
+        bar_spacing = 2pt,
+        grid_line_width = 0.25pt,
+        minor_label_font = "Gill Sans",
+        major_label_font = "Gill Sans",
+        alphas = [0.7],
+    )
+
+    set_default_plot_size(max(10, l) * cm, 10 * cm)
+
+    plot(x = [string(i) * " = " * string(i, base=2, pad=Int(log2(l))) for i in 0:(l - 1)],
+         y = probabilities, label=string.(probabilities),
+         Guide.xticks(ticks = outcomes, orientation = :vertical),
+         Guide.yticks(ticks=[i * 0.1 for i = 0:10]),
+         Coord.cartesian(ymin = 0.0, ymax = 1.1),
+         Geom.bar, Geom.label(position=:above),
+         Guide.xlabel("Outcomes"),
+         Guide.ylabel("Probability"),
+         Guide.title("Outcome Probabilities"), tufte_bar)
 end
 
 
