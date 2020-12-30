@@ -17,9 +17,33 @@ const Gate = Array{Array{Amplitude, 2}, 1}
 h = [[ComplexF64(1/sqrt(2)) 1/sqrt(2)],
      [1/sqrt(2)            -1/sqrt(2)]]
 
-# function plot_state(state::State)
-#     println("print")
-# end
+function plot_state(state)
+    l = length(state)
+    outcomes = collect(0:l)
+    probabilities = round.(abs.(state).^2, digits = 3)
+
+    tufte_bar = Theme(
+        default_color = colorant"green",
+        background_color = colorant"white",
+        bar_spacing = 2pt,
+        grid_line_width = 0.25pt,
+        minor_label_font = "Gill Sans",
+        major_label_font = "Gill Sans",
+        alphas = [0.7],
+    )
+
+    set_default_plot_size(max(10, l) * cm, 10 * cm)
+
+    plot(x = [string(i) * " = " * string(i, base=2, pad=Int(log2(l))) for i in 0:(l - 1)],
+         y = probabilities, label=string.(probabilities),
+         Guide.xticks(ticks = outcomes, orientation = :vertical),
+         Guide.yticks(ticks=[i * 0.1 for i = 0:10]),
+         Coord.cartesian(ymin = 0.0, ymax = 1.1),
+         Geom.bar, Geom.label(position=:above),
+         Guide.xlabel("Outcomes"),
+         Guide.ylabel("Probability"),
+         Guide.title("Outcome Probabilities"), tufte_bar)
+end
 
 
 function pair_exchange!(state::State, gate::Gate, m0::Int, m1::Int)
@@ -65,7 +89,7 @@ function transform_with_matrix!(state::State, target::Int, gate::Gate,
     G = Matrix{ComplexF64}(I, n, n)
 
     factor = 2 ^ (target + 1)
-    shift = Int(2 ^ target)
+    shift =  2 ^ (target)
 
     for prefix in 0:(n / factor - 1)
         for suffix in 0:(2^target - 1)
@@ -100,13 +124,13 @@ end
 f(x::Int) = x % 2 == 0
 
 function test_play()
-    state = init_state(3)
-    for t in 0:2
+    n = 3
+    state = init_state(n)
+    for t in 0:n - 1
         transform_with_matrix!(state, t, h)
     end
-#     println(state)
     @show state
-#     plot_state(state)
+    plot_state(state)
 end
 
 test_play()
