@@ -5,6 +5,7 @@ qc:
 - Date: 2020-12-23
 =#
 
+import Cairo, Fontconfig
 
 using LinearAlgebra, Gadfly, Colors
 
@@ -12,26 +13,26 @@ const Amplitude = ComplexF64
 const State = Vector{Amplitude}
 const Gate = Array{Array{Amplitude, 2}, 1}
 
+global counter = 0
+
+
+############################### GATES ##########################################
+
 h = [[ComplexF64(1/sqrt(2)) 1/sqrt(2)],
      [1/sqrt(2)            -1/sqrt(2)]]
 
-function phase(theta::ComplexF64)
+function phase(theta)
     return [[1 0], [0 (cos(theta) + im * sin(theta))]]
 end
 
+############################### ENCODING ##########################################
 
-function param_encoding(state, targets, v)
-    theta = v * 2 * pi / (2 ^ length(targets))
-
-    for j in targets
-        transform!(state, j, h)
-    end
-
-    for i in targets
-        transform!(state, i, phase(2 ^ (1im * theta)))
-    end
-
-#     iqft(state, targets)
+# # check cth digit of binary string of x is 1
+function isDigitOne(x::Int, c::Int, n::Int)
+    str = reverse(string(x, base = 2, pad = n))
+    print(str * " has 1 at " * string(c + 1) * ": ")
+    println(string(str[c + 1] == '1'))
+    return str[c + 1] == '1'
 end
 
 function pair_exchange!(state::State, gate::Gate, m0::Int, m1::Int)
@@ -41,25 +42,60 @@ function pair_exchange!(state::State, gate::Gate, m0::Int, m1::Int)
     state[m1] = gate[2][1] * x + gate[2][2] * y
 end
 
+function c_transform(state::State, c::Int, t::Int, gate::Gate)
+    c = Int(log2(length(state))) - c - 1
+    transform!(state, t, gate, m -> isDigitOne(m, c, Int(log2(length(state)))))
+end
+
+function iqft(state::State, targets::Array)
+    for j in reverse(targets)
+        transform!(state, j, h)
+        for k in reverse(0:j - 1)
+            c_transform(state, j, targets[k + 1], phase(-pi / (2 ^ (j-k))))
+        end
+    end
+end
+
+
+function param_encoding(state, targets, v)
+    theta = v * 2 * pi / (2 ^ length(targets))
+
+@show state
+    for j in targets
+        transform!(state, j, h)
+    end
+
+    for i in targets
+        transform!(state, i, phase(2 ^ i * theta))
+    end
+
+    iqft(state, [0, 1, 2])
+end
+
+
+############################### TRANSFORMATIONS ##########################################
+
 function transform!(state::State, target::Int, gate::Gate,
                     cond::Function = f(x::Int)::Bool = true)
-    # sections begin when we reach a new set of "first qbits" (i.e. first in a pair)
+    # sections begin when we reach a new set of "first qubits" (i.e. first in a pair)
     # ex. with distance 2 and state [1, 0, 0, 0, 0, 0, 0, 0], the sections would be
-    # [1*, 0*, 0, 0], [0*, 0*, 0, 0] (* signifies the first qbit of each pair)
+    # [1*, 0*, 0, 0], [0*, 0*, 0, 0] (* signifies the first qubit of each pair)
 
-    # number of qbits in each section of the state
+    target = Int(log2(length(state))) - target - 1
+
+    # number of qubits in each section of the state
     section_len = Int(2 ^ (target + 1))
 
-    # distance between paired qbits
+    # distance between paired qubits
     distance = Int(section_len / 2)
 
     # applies the gate to each pair
     for section in 0:(length(state) / section_len - 1)
         for pair in 0:(section_len / 2 - 1)
-            # index of first qbit in pair
+            # index of first qubit in pair
             m0 = Int(section_len * (section) + pair)
             if (cond(m0))
-                # index of second qbit in pair
+                # index of second qubit in pair
                 m1 = m0 + distance
                 pair_exchange!(state, gate, m0 + 1, m1 + 1)
             end
@@ -95,6 +131,8 @@ function transform_with_matrix!(state::State, target::Int, gate::Gate,
     state .= G * state
 end
 
+############################### GRAPHING ##########################################
+
 # https://gist.github.com/eyecatchup/9536706 Colors
 function complex_to_hsv(z::Complex, change_sat::Bool = true)
     r = real(z)
@@ -116,7 +154,7 @@ function complex_to_hsv(z::Complex, change_sat::Bool = true)
     return (hue, sat, val)
 end
 
-function bar_state(state, amp::Bool = true)
+function bar_state(state, amp::Bool = true, title::String = "default")
     l = length(state)
     outcomes = collect(0:l)
     #amplitudes (colors based on vector)
@@ -124,14 +162,17 @@ function bar_state(state, amp::Bool = true)
         data = round.(abs.(state), digits = 3)
         bar_colors = [HSV(h, 1, v) for (h, _, v) in complex_to_hsv.(Complex.(state))]
         ylabel = "Amplitude"
-        title = "Outcome Amplitudes"
-
+        if (title == "default")
+            title = "Outcome Amplitudes"
+        end
     #probabilities (all red)
     else
         data =round.(abs.(state).^2, digits = 3)
         bar_colors = [HSV(0,1,1) for a in state]
         ylabel = "Probability"
-        title = "Outcome Probabilities"
+        if (title == "default")
+            title = "Outcome Probabilities"
+        end
     end
 
 
@@ -160,33 +201,45 @@ function bar_state(state, amp::Bool = true)
          tufte_bar)
 end
 
-function pixel_state(state::State)
-l = size(state)[1]
-outcomes = [0:l;]
-pixel_colors = [HSV(h, s, v) for (h, s, v) in complex_to_hsv.(Complex.(state))]
+function pixel_state(state::State, title::String = "Outcome Amplitudes")
+    l = size(state)[1]
+    outcomes = [0:l;]
+    pixel_colors = [HSV(h, s, v) for (h, s, v) in complex_to_hsv.(Complex.(state))]
 
-tufte_bar = Theme(
-default_color=colorant"gray",
-background_color=colorant"white",
-bar_spacing=1pt,
-grid_line_width=0pt,
-minor_label_font="Gill Sans",
-major_label_font="Gill Sans",
-key_position=:none
-)
+    tufte_bar = Theme(
+        default_color=colorant"gray",
+        background_color=colorant"white",
+        bar_spacing=1pt,
+        grid_line_width=0pt,
+        minor_label_font="Gill Sans",
+        major_label_font="Gill Sans",
+        key_position=:none
+    )
 
-set_default_plot_size(4cm, max(10, l)*cm)
-probabilities = round.(abs.(state).^2, digits=3) #[abs(state[i+1])^2 for i=0:l-1]
+    set_default_plot_size(4cm, max(10, l)*cm)
+    probabilities = round.(abs.(state).^2, digits=3)
 
-plot(y=[string(i)*"="*string(i, base=2, pad=Int(log2(l))) for i in (0:l-1)], x=[0.05 for _=0:l-1],
-Guide.ylabel(""), Guide.yticks(ticks=outcomes),
-Guide.xlabel(""), Guide.xticks(ticks=nothing),
-Coord.cartesian(xmin=0.0, xmax=0.1),
-Geom.bar(orientation=:horizontal),
-tufte_bar,
-color=0:l-1, Scale.color_discrete_manual(pixel_colors...))
+    plot(y=[string(i)*"="*string(i, base=2, pad=Int(log2(l))) for i in (0:l-1)], x=[0.05 for _=0:l-1],
+        Guide.ylabel(""), Guide.yticks(ticks=outcomes),
+        Guide.xlabel(""), Guide.xticks(ticks=nothing),
+        Coord.cartesian(xmin=0.0, xmax=0.1),
+        Geom.bar(orientation=:horizontal),
+        Guide.title(title),
+        tufte_bar,
+        color=0:l-1, Scale.color_discrete_manual(pixel_colors...))
 end
 
+function save_state(state::State, title::String = "default", amplitude::Bool = true, bar::Bool = true)
+    if (bar)
+        draw(PNG(joinpath(homedir(), "IdeaProjects/quantum-sim/images/" * string(counter) * ".png"), max(10, length(state)) * cm, 10cm), bar_state(state, amplitude, title))
+    else
+        draw(PNG(joinpath(homedir(), "IdeaProjects/quantum-sim/images/" * string(counter) * ".png"), max(10, length(state)) * cm, 10cm), pixel_state(state, title))
+    end
+    global counter += 1
+end
+
+
+############################### INITIALIZATION ##########################################
 
 # initializes the state as an array of size 2^n
 # index 1 has proportion 1, the rest have nothing (proportion 0)
@@ -196,27 +249,38 @@ function init_state(n::Int)::Array{Amplitude, 1}
     return state
 end
 
-f(x::Int) = x % 2 == 0
+############################### RUN METHODS ##########################################
 
 function test_play()
     n = 3
     state = init_state(n)
+    save_state(state, "Initial State")
 
-    for t in 0:(n)
-        transform_with_matrix!(state, t, h)
+    for t in 0:(n - 1)
+        transform!(state, t, h)
+        save_state(state, "Hadamard Applied to Qubit " * string(t))
     end
 
-    # rotation of qbits with "1" in bitstring position t
+    param_encoding(state, [0, 1, 2], 4.9)
+    save_state(state, "After encoding " * string(4.9) * " to targets")
+
+    # rotation of qubits with "1" in bitstring position t
     # ex. transform!(state, 2, phase(pi/4)) rotates 100, 101, 110, 111 by pi/4
-    transform!(state, 1, phase(pi/4))
-    transform!(state, 2, phase(pi/4))
+#     transform!(state, 1, phase(pi/4))
+#     save_state("Phase of π/4 Applied to Qubit 1")
+end
 
-#     param_encoding(state, [1], 1)
-    draw(SVG("probabilities.svg", max(10, length(state)) * cm, 10cm), bar_state(state))
-    draw(SVG("state.svg", 4cm, max(10, length(state)) * cm), pixel_state(state))
-
-#     bar_state(state)
-#     pixel_state(state)
+function test_phase()
+    n = 3
+    state = init_state(n)
+    save_state(state, "Initial State"))
+    for t in 0:n-1
+        transform!(state, t, h)
+        save_state(state, "Phase of π/4 Applied to Qubit 1"))
+        transform!(state, t, phase(pi/4))
+        save_state(state, "Phase of π/4 Applied to Qubit 2"))
+    end
 end
 
 test_play()
+# test_phase()
