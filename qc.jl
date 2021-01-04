@@ -16,13 +16,17 @@ const State = Vector{Amplitude}
 
 struct Gate
     name::String
-    data::Vector{Vector{Amplitude}}
+    weights::Vector{Vector{Amplitude}}
 end
 
 ############################### GATES ##########################################
 
 h = Gate("H", [[Complex(1/sqrt(2)), 1/sqrt(2)],
                        [1/sqrt(2), -1/sqrt(2)]])
+
+x = Gate("X", [[0, 1], [1, 0]])
+
+z = Gate("Z", [[1, 0], [0, -1]])
 
 function phase(theta)
     return Gate("Phase(" * string(round(theta,digits=3)) * ")",
@@ -40,8 +44,8 @@ end
 function pair_exchange!(state::State, gate::Gate, m0::Int, m1::Int)
     x = state[m0]
     y = state[m1]
-    state[m0] = gate.data[1][1] * x + gate.data[1][2] * y
-    state[m1] = gate.data[2][1] * x + gate.data[2][2] * y
+    state[m0] = gate.weights[1][1] * x + gate.weights[1][2] * y
+    state[m1] = gate.weights[2][1] * x + gate.weights[2][2] * y
 end
 
 function c_transform(state::State, c::Int, t::Int, gate::Gate)
@@ -62,7 +66,6 @@ end
 function param_encoding(state, targets, v)
     theta = v * 2 * pi / (2 ^ length(targets))
 
-@show state
     for j in targets
         transform!(state, j, h)
     end
@@ -125,17 +128,20 @@ function transform_with_matrix!(state::State, target::Int, gate::Gate,
                 # + 1 for julia indexing
                 m0 += 1
                 m1 = m0 + shift
-                G[m0, m0] = gate.data[1][1]
-                G[m0, m1] = gate.data[1][2]
-                G[m1, m0] = gate.data[2][1]
-                G[m1, m1] = gate.data[2][2]
+                G[m0, m0] = gate.weights[1][1]
+                G[m0, m1] = gate.weights[1][2]
+                G[m1, m0] = gate.weights[2][1]
+                G[m1, m1] = gate.weights[2][2]
             end
         end
     end
     state .= G * state
+    title = "Gate: " * gate.name * ", target: " * string(target)
+    save_state(state, title)
 end
 
 ############################### GRAPHING ##########################################
+
 using Gadfly, Colors
 
 # https://gist.github.com/eyecatchup/9536706 Colors
@@ -167,17 +173,17 @@ function bar_state(state, amp::Bool = true, title::String = "default")
         data = round.(abs.(state), digits = 3)
         bar_colors = [HSV(h, 1, v) for (h, _, v) in complex_to_hsv.(Complex.(state))]
         ylabel = "Amplitude"
-#         if (title == "default")
-#             title = "Outcome Amplitudes"
-#         end
+        if (title == "default")
+            title = "Outcome Amplitudes"
+        end
     #probabilities (all red)
     else
         data =round.(abs.(state).^2, digits = 3)
         bar_colors = [HSV(0,1,1) for a in state]
         ylabel = "Probability"
-#         if (title == "default")
-#             title = "Outcome Probabilities"
-#         end
+        if (title == "default")
+            title = "Outcome Probabilities"
+        end
     end
 
 
@@ -259,14 +265,17 @@ end
 ############################### RUN METHODS ##########################################
 
 function test_transform()
-    n = 4
+    n = 2
     state = init_state(n)
     save_state(state, "Initial State")
 
-    for t in 0:(n - 1)
+
+    for t in 0:n - 1
         transform!(state, t, h)
     end
 end
+
+# h 0, x on qbit 1
 
 function test_param()
     n = 4
@@ -290,6 +299,18 @@ function test_phase()
     end
 end
 
+function test_x()
+    n = 2
+    state = init_state(n)
+    save_state(state, "Initial State")
+
+    # Bell state
+    transform!(state, 1, h)
+
+    c_transform(state, 1, 0, x)
+end
+
 test_transform()
 test_param()
 test_phase()
+test_x()
