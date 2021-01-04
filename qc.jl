@@ -5,24 +5,28 @@ qc:
 - Date: 2020-12-23
 =#
 
-import Cairo, Fontconfig
-
-using LinearAlgebra, Gadfly, Colors
-
-const Amplitude = ComplexF64
-const State = Vector{Amplitude}
-const Gate = Array{Array{Amplitude, 2}, 1}
+using LinearAlgebra
 
 global counter = 0
+global folder = "IdeaProjects/quantum-sim/images/"
 
+const Amplitude = Complex
+
+const State = Vector{Amplitude}
+
+struct Gate
+    name::String
+    data::Vector{Vector{Amplitude}}
+end
 
 ############################### GATES ##########################################
 
-h = [[ComplexF64(1/sqrt(2)) 1/sqrt(2)],
-     [1/sqrt(2)            -1/sqrt(2)]]
+h = Gate("H", [[Complex(1/sqrt(2)), 1/sqrt(2)],
+                       [1/sqrt(2), -1/sqrt(2)]])
 
 function phase(theta)
-    return [[1 0], [0 (cos(theta) + im * sin(theta))]]
+    return Gate("Phase(" * string(round(theta,digits=3)) * ")",
+                [[1, 0], [0, (cos(theta) + im * sin(theta))]])
 end
 
 ############################### ENCODING ##########################################
@@ -30,16 +34,14 @@ end
 # # check cth digit of binary string of x is 1
 function isDigitOne(x::Int, c::Int, n::Int)
     str = reverse(string(x, base = 2, pad = n))
-    print(str * " has 1 at " * string(c + 1) * ": ")
-    println(string(str[c + 1] == '1'))
     return str[c + 1] == '1'
 end
 
 function pair_exchange!(state::State, gate::Gate, m0::Int, m1::Int)
     x = state[m0]
     y = state[m1]
-    state[m0] = gate[1][1] * x + gate[1][2] * y
-    state[m1] = gate[2][1] * x + gate[2][2] * y
+    state[m0] = gate.data[1][1] * x + gate.data[1][2] * y
+    state[m1] = gate.data[2][1] * x + gate.data[2][2] * y
 end
 
 function c_transform(state::State, c::Int, t::Int, gate::Gate)
@@ -69,7 +71,7 @@ function param_encoding(state, targets, v)
         transform!(state, i, phase(2 ^ i * theta))
     end
 
-    iqft(state, [0, 1, 2])
+    iqft(state, targets)
 end
 
 
@@ -101,6 +103,8 @@ function transform!(state::State, target::Int, gate::Gate,
             end
         end
     end
+    title = "Gate: " * gate.name * ", target: " * string(target)
+    save_state(state, title)
 end
 
 
@@ -121,10 +125,10 @@ function transform_with_matrix!(state::State, target::Int, gate::Gate,
                 # + 1 for julia indexing
                 m0 += 1
                 m1 = m0 + shift
-                G[m0, m0] = gate[1][1]
-                G[m0, m1] = gate[1][2]
-                G[m1, m0] = gate[2][1]
-                G[m1, m1] = gate[2][2]
+                G[m0, m0] = gate.data[1][1]
+                G[m0, m1] = gate.data[1][2]
+                G[m1, m0] = gate.data[2][1]
+                G[m1, m1] = gate.data[2][2]
             end
         end
     end
@@ -132,6 +136,7 @@ function transform_with_matrix!(state::State, target::Int, gate::Gate,
 end
 
 ############################### GRAPHING ##########################################
+using Gadfly, Colors
 
 # https://gist.github.com/eyecatchup/9536706 Colors
 function complex_to_hsv(z::Complex, change_sat::Bool = true)
@@ -162,17 +167,17 @@ function bar_state(state, amp::Bool = true, title::String = "default")
         data = round.(abs.(state), digits = 3)
         bar_colors = [HSV(h, 1, v) for (h, _, v) in complex_to_hsv.(Complex.(state))]
         ylabel = "Amplitude"
-        if (title == "default")
-            title = "Outcome Amplitudes"
-        end
+#         if (title == "default")
+#             title = "Outcome Amplitudes"
+#         end
     #probabilities (all red)
     else
         data =round.(abs.(state).^2, digits = 3)
         bar_colors = [HSV(0,1,1) for a in state]
         ylabel = "Probability"
-        if (title == "default")
-            title = "Outcome Probabilities"
-        end
+#         if (title == "default")
+#             title = "Outcome Probabilities"
+#         end
     end
 
 
@@ -229,11 +234,13 @@ function pixel_state(state::State, title::String = "Outcome Amplitudes")
         color=0:l-1, Scale.color_discrete_manual(pixel_colors...))
 end
 
+import Cairo, Fontconfig
+
 function save_state(state::State, title::String = "default", amplitude::Bool = true, bar::Bool = true)
     if (bar)
-        draw(PNG(joinpath(homedir(), "IdeaProjects/quantum-sim/images/" * string(counter) * ".png"), max(10, length(state)) * cm, 10cm), bar_state(state, amplitude, title))
+        draw(PNG(joinpath(homedir(), folder * string(counter) * ".png"), max(10, length(state)) * cm, 10cm), bar_state(state, amplitude, title))
     else
-        draw(PNG(joinpath(homedir(), "IdeaProjects/quantum-sim/images/" * string(counter) * ".png"), max(10, length(state)) * cm, 10cm), pixel_state(state, title))
+        draw(PNG(joinpath(homedir(), folder * string(counter) * ".png"), max(10, length(state)) * cm, 10cm), pixel_state(state, title))
     end
     global counter += 1
 end
@@ -251,36 +258,38 @@ end
 
 ############################### RUN METHODS ##########################################
 
-function test_play()
-    n = 3
+function test_transform()
+    n = 4
     state = init_state(n)
     save_state(state, "Initial State")
 
     for t in 0:(n - 1)
         transform!(state, t, h)
-        save_state(state, "Hadamard Applied to Qubit " * string(t))
     end
+end
 
-    param_encoding(state, [0, 1, 2], 4.9)
-    save_state(state, "After encoding " * string(4.9) * " to targets")
+function test_param()
+    n = 4
+    state = init_state(n)
+    save_state(state, "Initial State")
 
-    # rotation of qubits with "1" in bitstring position t
-    # ex. transform!(state, 2, phase(pi/4)) rotates 100, 101, 110, 111 by pi/4
-#     transform!(state, 1, phase(pi/4))
-#     save_state("Phase of π/4 Applied to Qubit 1")
+    param_encoding(state, collect(0:n - 1), 15)
+    save_state(state, "After encoding " * string(15) * " to targets")
+
 end
 
 function test_phase()
-    n = 3
+    n = 4
     state = init_state(n)
-    save_state(state, "Initial State"))
+    save_state(state, "Initial State")
     for t in 0:n-1
         transform!(state, t, h)
-        save_state(state, "Phase of π/4 Applied to Qubit 1"))
+        save_state(state, "Phase of π/4 Applied to Qubit 1")
         transform!(state, t, phase(pi/4))
-        save_state(state, "Phase of π/4 Applied to Qubit 2"))
+        save_state(state, "Phase of π/4 Applied to Qubit 2")
     end
 end
 
-test_play()
-# test_phase()
+test_transform()
+test_param()
+test_phase()
