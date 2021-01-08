@@ -5,7 +5,7 @@ qc:
 - Date: 2020-12-23
 =#
 
-using LinearAlgebra
+using LinearAlgebra, Parameters
 
 global counter = 0
 global folder = "IdeaProjects/quantum-sim/images/"
@@ -19,6 +19,12 @@ struct Gate
     weights::Vector{Vector{Amplitude}}
 end
 
+struct Transform
+    gate::Gate
+    control::Int
+    target::Int
+end
+
 ############################### GATES ##########################################
 
 h = Gate("H", [[Complex(1/sqrt(2)), 1/sqrt(2)],
@@ -27,6 +33,18 @@ h = Gate("H", [[Complex(1/sqrt(2)), 1/sqrt(2)],
 x = Gate("X", [[0, 1], [1, 0]])
 
 z = Gate("Z", [[1, 0], [0, -1]])
+
+function Rx(theta)
+     return Gate("Rx(" * string(round(theta,digits=3)) * ")",
+                 [[cos(theta / 2), -im * sin(theta / 2)],
+                 [-im * sin(theta / 2), cos(theta / 2)]])
+end
+
+function Ry(theta)
+     return Gate("Rx(" * string(round(theta,digits=3)) * ")",
+                 [[cos(theta / 2), -sin(theta / 2)],
+                  [sin(theta / 2), cos(theta / 2)]])
+end
 
 function phase(theta)
     return Gate("Phase(" * string(round(theta,digits=3)) * ")",
@@ -116,6 +134,7 @@ end
 function transform_with_matrix!(state::State, target::Int, gate::Gate,
                                 cond::Function = f(x::Int)::Bool = true)
     n = length(state)
+    target = Int(log2(length(state))) - target - 1
     G = Matrix{ComplexF64}(I, n, n)
 
     factor = 2 ^ (target + 1)
@@ -135,6 +154,7 @@ function transform_with_matrix!(state::State, target::Int, gate::Gate,
             end
         end
     end
+
     state .= G * state
     title = "Gate: " * gate.name * ", target: " * string(target)
     save_state(state, title)
@@ -173,17 +193,17 @@ function bar_state(state, amp::Bool = true, title::String = "default")
         data = round.(abs.(state), digits = 3)
         bar_colors = [HSV(h, 1, v) for (h, _, v) in complex_to_hsv.(Complex.(state))]
         ylabel = "Amplitude"
-        if (title == "default")
-            title = "Outcome Amplitudes"
-        end
+#         if (title == "default")
+#             title = "Outcome Amplitudes"
+#         end
     #probabilities (all red)
     else
-        data =round.(abs.(state).^2, digits = 3)
+        data = round.(abs.(state).^2, digits = 3)
         bar_colors = [HSV(0,1,1) for a in state]
         ylabel = "Probability"
-        if (title == "default")
-            title = "Outcome Probabilities"
-        end
+#         if (title == "default")
+#             title = "Outcome Probabilities"
+#         end
     end
 
 
@@ -243,16 +263,51 @@ end
 import Cairo, Fontconfig
 
 function save_state(state::State, title::String = "default", amplitude::Bool = true, bar::Bool = true)
+    global counter += 1
     if (bar)
         draw(PNG(joinpath(homedir(), folder * string(counter) * ".png"), max(10, length(state)) * cm, 10cm), bar_state(state, amplitude, title))
     else
         draw(PNG(joinpath(homedir(), folder * string(counter) * ".png"), max(10, length(state)) * cm, 10cm), pixel_state(state, title))
     end
-    global counter += 1
 end
 
+##################################### MATRICES ##########################################
 
-############################### INITIALIZATION ##########################################
+function transform_to_matrix_helper(trans::Transform, n::Int, cond::Function = f(x::Int)::Bool = true)
+
+    G = Matrix{Complex}(I, n, n)
+
+    target = Int(log2(n)) - trans.target - 1
+    gate = trans.gate
+
+    factor = Int(2 ^ (target + 1))
+    shift =  Int(2 ^ (target))
+
+    for prefix in 0:(n / factor - 1)
+        for suffix in 0:(2^target - 1)
+            m0 = Int(factor * (prefix) + suffix)
+            if (cond(m0))
+                # + 1 for julia indexing
+                m0 += 1
+                m1 = m0 + shift
+                G[m0, m0] = gate.weights[1][1]
+                G[m0, m1] = gate.weights[1][2]
+                G[m1, m0] = gate.weights[2][1]
+                G[m1, m1] = gate.weights[2][2]
+            end
+        end
+    end
+
+    return G
+
+end
+
+function transform_to_matrix(trans::Transform, n::Int)
+    mat = transform_to_matrix_helper(trans, n)
+    return mat
+end
+
+################################# INITIALIZATION ########################################
 
 # initializes the state as an array of size 2^n
 # index 1 has proportion 1, the rest have nothing (proportion 0)
@@ -262,10 +317,10 @@ function init_state(n::Int)::Array{Amplitude, 1}
     return state
 end
 
-############################### RUN METHODS ##########################################
+################################ RUN METHODS ############################################
 
 function test_transform()
-    n = 2
+    n = 3
     state = init_state(n)
     save_state(state, "Initial State")
 
@@ -288,14 +343,15 @@ function test_param()
 end
 
 function test_phase()
-    n = 4
+    n = 3
     state = init_state(n)
     save_state(state, "Initial State")
     for t in 0:n-1
         transform!(state, t, h)
-        save_state(state, "Phase of π/4 Applied to Qubit 1")
+    end
+
+    for t in 0:n-1
         transform!(state, t, phase(pi/4))
-        save_state(state, "Phase of π/4 Applied to Qubit 2")
     end
 end
 
@@ -310,7 +366,58 @@ function test_x()
     c_transform(state, 1, 0, x)
 end
 
-test_transform()
-test_param()
-test_phase()
-test_x()
+function test_transform_to_matrix()
+    n = 3
+    state = init_state(n)
+
+    mat = Matrix{Complex}(I, 2^n, 2^n)
+    mat_list = Vector{Matrix{Complex}}()
+    push!(mat_list, mat)
+    trans_list = Vector{Transform}()
+
+    # testing h
+    push!(trans_list, Transform(h, 0, 0))
+    push!(trans_list, Transform(h, 0, 1))
+    push!(trans_list, Transform(h, 0, 2))
+
+    while (!isempty(trans_list))
+        trans = trans_list[1]
+        mat = transform_to_matrix(trans, 2^n) * mat
+
+        title = "Gate: " * trans.gate.name * ", target: " * string(trans.target)
+        save_state(mat * state, title)
+
+        popfirst!(trans_list)
+    end
+
+    # resetting state
+#     state = init_state(n)
+
+    # testing phase
+    theta = pi / 4
+    push!(trans_list, Transform(phase(theta), 0, 0))
+    push!(trans_list, Transform(phase(theta), 0, 1))
+    push!(trans_list, Transform(phase(theta), 0, 2))
+
+    while (!isempty(trans_list))
+        trans = trans_list[1]
+        mat = transform_to_matrix(trans, 2^n) * mat
+
+        title = "Gate: " * trans.gate.name * ", target: " * string(trans.target)
+        save_state(mat * state, title)
+
+        popfirst!(trans_list)
+    end
+
+    title = "Final"
+    save_state(mat * init_state(n), title)
+
+end
+
+# Test (look up julia test, choose good project)
+
+# test_transform()
+# test_param()
+# test_phase()
+# test_x()
+test_transform_to_matrix()
