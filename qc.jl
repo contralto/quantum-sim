@@ -390,9 +390,6 @@ function test_transform_to_matrix()
         popfirst!(trans_list)
     end
 
-    # resetting state
-#     state = init_state(n)
-
     # testing phase
     theta = pi / 4
     push!(trans_list, Transform(phase(theta), 0, 0))
@@ -414,7 +411,7 @@ function test_transform_to_matrix()
 
 end
 
-# Test (look up julia test, choose good project)
+# mat of negative angle should be transpose w/ imaginaries as their conjugates
 
 # test_transform()
 # test_param()
